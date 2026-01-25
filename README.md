@@ -14,11 +14,11 @@ aili-notes/
 │   ├── research/      # 研究类提示词
 │   ├── writing/       # 写作类提示词
 │   └── templates/     # 通用模板
-├── skills/            # 技能库（Claude Code Skills）
+├── skills/            # 技能库（AI AgentSkills）
 │   ├── code-polish/                    # 代码精炼与标准化
 │   ├── openspec-change-interviewer/    # OpenSpec 变更面试官
 │   └── openspec-feature-list/          # OpenSpec 功能列表生成
-├── commands/          # 命令库（Claude Code Commands）
+├── commands/          # 命令库（AI AgentCommands）
 │   └── coding/        # 编码相关命令
 └── workflows/         # 工作流（暂未收录）
 ```
@@ -54,7 +54,7 @@ aili-notes/
 
 ### Skills（技能库）
 
-技能库包含 Claude Code 的自定义技能定义文件（`SKILL.md`），用于扩展 Claude 的专业能力。
+技能库包含 AI Agent的自定义技能定义文件（`SKILL.md`），用于扩展 Claude 的专业能力。
 
 #### code-polish（代码精炼与标准化）
 
@@ -99,7 +99,7 @@ aili-notes/
 
 ### Commands（命令库）
 
-命令库包含 Claude Code 的自定义命令定义文件。
+命令库包含 AI Agent的自定义命令定义文件。
 
 #### monitor-openspec-codex（OpenSpec Codex 监控器）
 
