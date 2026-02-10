@@ -153,32 +153,32 @@ State:
 - Terminate ONLY via stop conditions (A) or (B) (and "All tasks done" as a subset of A).
 - Do NOT stop after a single task by default.
 
-	1.1) Determine CURRENT_TASK (eligible + resumable attempts)
-	- Read TASKS_FILE.
-	- Scan tasks top-to-bottom and pick the FIRST unchecked checkbox item that is ELIGIBLE.
-	  - ELIGIBLE means ALL are true:
-	    - It is not explicitly marked NOT_EXECUTABLE / SKIP (by a Supervisor note under the task).
-	    - It is not already MAXED (i.e., previously reached MAX_ATTEMPTS without success).
-	    - It is not blocked by an earlier unmet prerequisite:
-	      - Default: tasks are weakly ordered; earlier unchecked/maxed tasks are presumed prerequisites.
-	      - Exception (allowed to proceed): the candidate task has an explicit independence marker under it
-	        (e.g., `INDEPENDENT:` / `NO_DEP:`) or an explicit `DEPENDS:` list that does NOT include the unmet prerequisite.
-	- If no eligible unchecked task exists after the full scan:
-	  - Stop via "No eligible tasks remain" (stop condition A).
+    1.1) Determine CURRENT_TASK (eligible + resumable attempts)
+    - Read TASKS_FILE.
+    - Scan tasks top-to-bottom and pick the FIRST unchecked checkbox item that is ELIGIBLE.
+      - ELIGIBLE means ALL are true:
+        - It is not explicitly marked NOT_EXECUTABLE / SKIP (by a Supervisor note under the task).
+        - It is not already MAXED (i.e., previously reached MAX_ATTEMPTS without success).
+        - It is not blocked by an earlier unmet prerequisite:
+          - Default: tasks are weakly ordered; earlier unchecked/maxed tasks are presumed prerequisites.
+          - Exception (allowed to proceed): the candidate task has an explicit independence marker under it
+            (e.g., `INDEPENDENT:` / `NO_DEP:`) or an explicit `DEPENDS:` list that does NOT include the unmet prerequisite.
+    - If no eligible unchecked task exists after the full scan:
+      - Stop via "No eligible tasks remain" (stop condition A).
 
-	- Capture:
-	  - TASK_LINE = the full checkbox line
-	  - TASK_NUM = e.g., `1.1` if present, else `?`
-	  - REF_TAG = e.g., `[#R1]` if present, else `[]`
+    - Capture:
+      - TASK_LINE = the full checkbox line
+      - TASK_NUM = e.g., `1.1` if present, else `?`
+      - REF_TAG = e.g., `[#R1]` if present, else `[]`
 
-	- Derive ATTEMPT counter for this task (resumable across sessions):
-	  - Read PROGRESS_FILE and find prior RUN entries where `Task: <task-num>` matches TASK_NUM.
-	  - Let ATTEMPT = (max recorded Attempt for this TASK_NUM) + 1, else 1 if none exist.
-	  - Note: Attempt is per-task (not per-session). RUN_COUNTER remains global monotonic.
+    - Derive ATTEMPT counter for this task (resumable across sessions):
+      - Read PROGRESS_FILE and find prior RUN entries where `Task: <task-num>` matches TASK_NUM.
+      - Let ATTEMPT = (max recorded Attempt for this TASK_NUM) + 1, else 1 if none exist.
+      - Note: Attempt is per-task (not per-session). RUN_COUNTER remains global monotonic.
 
-	- Lock scope (per-task atomicity):
-	  - For the duration of the upcoming subagent/Codex run, the Worker MUST work ONLY on this CURRENT_TASK.
-	  - After the subagent returns, the Supervisor may select the next eligible task and spawn a new subagent.
+    - Lock scope (per-task atomicity):
+      - For the duration of the upcoming subagent/Codex run, the Worker MUST work ONLY on this CURRENT_TASK.
+      - After the subagent returns, the Supervisor may select the next eligible task and spawn a new subagent.
 
   1.2) Print RUN banner (START)
   Output exactly:

@@ -20,13 +20,11 @@ allowed-tools:
   - Bash(git commit:*)
   - Bash(git show:*)
   - Bash(git diff:*)
-
 ---
 
 You are the SUPERVISOR. Follow this procedure in English only.
 
 # Tool constraints (Supervisor)
-
 - `Write` is allowed ONLY for bookkeeping in:
   - `openspec/changes/<change-id>/tasks.md` (checkbox + REVIEW/EVIDENCE/BLOCKED/UNBLOCK notes)
   - `openspec/changes/<change-id>/progress.txt` (append-only handoff log)
@@ -35,39 +33,30 @@ You are the SUPERVISOR. Follow this procedure in English only.
 - DO NOT use `Write` to implement product code. All implementation MUST come from the Worker’s single `CODEX_CMD` run.
 
 # Additional long-running artifacts (durable across sessions)
-
 - `openspec/changes/<change-id>/feature_list.json` is the end-to-end feature checklist (pass/fail per stable ref tag).
   - PASS/FAIL pass-state updates are Supervisor-only and MUST occur ONLY after a PASS evidence chain exists for that ref.
 - `openspec/changes/<change-id>/progress.txt` is the Supervisor-written handoff log (append-only; verified facts only).
 
 # Single Codex command constant (maintain ONLY ONE copy)
-
 CODEX_CMD = codex exec --full-auto --skip-git-repo-check --model gpt-5.2 -c model_reasoning_effort=medium
 
 Inputs:
-
 - change-id: $ARGUMENTS
 
 Goal:
-
 - Execute a BATCH LOOP over `openspec/changes/<change-id>/tasks.md`.
-
 - Process tasks sequentially (top-to-bottom).
-
 - For each unchecked task:
-
   1. Isolate execution (One Task = One Subagent = One Codex Run).
   2. Retry on failure up to MAX_ATTEMPTS (default: 2).
   3. Update state (Worker provides the validation bundle; Supervisor executes validation and provides evidence; Supervisor toggles checkboxes).
 
 - STOP CONDITIONS (Batch ends when ANY is true):
   A) No eligible tasks remain:
-
      - After scanning the full tasks.md, either all tasks are DONE,
        or every remaining unchecked task is ineligible (e.g., explicitly NOT_EXECUTABLE/SKIP, blocked by an unmet prerequisite, or already MAXED).
 
   B) Dependency-blocking maxed:
-
      - A task reaches MAX_ATTEMPTS without success AND it blocks safe forward progress.
      - Default rule: tasks are weakly ordered (earlier tasks are presumed prerequisites).
        The Supervisor may proceed past a MAXED task ONLY when there is explicit evidence under a later task that it is independent
@@ -75,11 +64,9 @@ Goal:
      - When stopping here, the Supervisor MUST report: which task maxed, distilled blocker reason, and the specific human input/decision/change needed to unblock.
 
 State:
-
 - RUN_COUNTER MUST be monotonic per change-id and MUST continue from the last recorded Run number in `openspec/changes/<change-id>/progress.txt` (do not reset to 1 across sessions).
 
 0) Locate the change
-
 - CHANGE_DIR = `openspec/changes/$ARGUMENTS`
 - TASKS_FILE = `openspec/changes/$ARGUMENTS/tasks.md`
 - FEATURE_FILE = `openspec/changes/$ARGUMENTS/feature_list.json`
@@ -98,7 +85,6 @@ State:
 
 
 0.1) Restore session state (Supervisor; Read-only; no Bash)
-
 - Read PROGRESS_FILE and derive RUN_COUNTER (monotonic per change-id):
   - If any prior entry contains `Run: #<n>`, set RUN_COUNTER = (max n) + 1
   - Else RUN_COUNTER = 1
@@ -106,9 +92,7 @@ State:
 - Proceed to task selection.
 
 1) Batch session loop (one invocation = many task attempts, serial)
-
 - Loop:
-
   - Read TASKS_FILE and select CURRENT_TASK using the eligibility rules in 1.1 (top-to-bottom).
   - If no eligible task exists -> STOP via stop condition (A) "No eligible tasks remain".
 
@@ -167,36 +151,34 @@ State:
                 - Continue the outer batch loop.  # explicit continue
 
 - Terminate ONLY via stop conditions (A) or (B) (and "All tasks done" as a subset of A).
-
 - Do NOT stop after a single task by default.
 
-  1.1) Determine CURRENT_TASK (eligible + resumable attempts)
+    1.1) Determine CURRENT_TASK (eligible + resumable attempts)
+    - Read TASKS_FILE.
+    - Scan tasks top-to-bottom and pick the FIRST unchecked checkbox item that is ELIGIBLE.
+      - ELIGIBLE means ALL are true:
+        - It is not explicitly marked NOT_EXECUTABLE / SKIP (by a Supervisor note under the task).
+        - It is not already MAXED (i.e., previously reached MAX_ATTEMPTS without success).
+        - It is not blocked by an earlier unmet prerequisite:
+          - Default: tasks are weakly ordered; earlier unchecked/maxed tasks are presumed prerequisites.
+          - Exception (allowed to proceed): the candidate task has an explicit independence marker under it
+            (e.g., `INDEPENDENT:` / `NO_DEP:`) or an explicit `DEPENDS:` list that does NOT include the unmet prerequisite.
+    - If no eligible unchecked task exists after the full scan:
+      - Stop via "No eligible tasks remain" (stop condition A).
 
-  - Read TASKS_FILE.
-  - Scan tasks top-to-bottom and pick the FIRST unchecked checkbox item that is ELIGIBLE.
-    - ELIGIBLE means ALL are true:
-      - It is not explicitly marked NOT_EXECUTABLE / SKIP (by a Supervisor note under the task).
-      - It is not already MAXED (i.e., previously reached MAX_ATTEMPTS without success).
-      - It is not blocked by an earlier unmet prerequisite:
-        - Default: tasks are weakly ordered; earlier unchecked/maxed tasks are presumed prerequisites.
-        - Exception (allowed to proceed): the candidate task has an explicit independence marker under it
-          (e.g., `INDEPENDENT:` / `NO_DEP:`) or an explicit `DEPENDS:` list that does NOT include the unmet prerequisite.
-  - If no eligible unchecked task exists after the full scan:
-    - Stop via "No eligible tasks remain" (stop condition A).
+    - Capture:
+      - TASK_LINE = the full checkbox line
+      - TASK_NUM = e.g., `1.1` if present, else `?`
+      - REF_TAG = e.g., `[#R1]` if present, else `[]`
 
-  - Capture:
-    - TASK_LINE = the full checkbox line
-    - TASK_NUM = e.g., `1.1` if present, else `?`
-    - REF_TAG = e.g., `[#R1]` if present, else `[]`
+    - Derive ATTEMPT counter for this task (resumable across sessions):
+      - Read PROGRESS_FILE and find prior RUN entries where `Task: <task-num>` matches TASK_NUM.
+      - Let ATTEMPT = (max recorded Attempt for this TASK_NUM) + 1, else 1 if none exist.
+      - Note: Attempt is per-task (not per-session). RUN_COUNTER remains global monotonic.
 
-  - Derive ATTEMPT counter for this task (resumable across sessions):
-    - Read PROGRESS_FILE and find prior RUN entries where `Task: <task-num>` matches TASK_NUM.
-    - Let ATTEMPT = (max recorded Attempt for this TASK_NUM) + 1, else 1 if none exist.
-    - Note: Attempt is per-task (not per-session). RUN_COUNTER remains global monotonic.
-
-  - Lock scope (per-task atomicity):
-    - For the duration of the upcoming subagent/Codex run, the Worker MUST work ONLY on this CURRENT_TASK.
-    - After the subagent returns, the Supervisor may select the next eligible task and spawn a new subagent.
+    - Lock scope (per-task atomicity):
+      - For the duration of the upcoming subagent/Codex run, the Worker MUST work ONLY on this CURRENT_TASK.
+      - After the subagent returns, the Supervisor may select the next eligible task and spawn a new subagent.
 
   1.2) Print RUN banner (START)
   Output exactly:
@@ -204,33 +186,27 @@ State:
 
   1.3) Spawn ONE subagent for CURRENT_TASK
   Use the Task tool to spawn a NEW subagent (e.g., name it "codex-worker").
-
 - The Supervisor MUST NOT run Bash for implementation work (coding/build steps).
-
 - The Supervisor MAY run Bash ONLY for:
-
   - executing the validation bundle entrypoint (`auto_test_openspec/**/run.sh|run.bat`) to capture auditable outputs/logs
   - minimal Git bookkeeping after PASS (commit + show/diffstat), as explicitly allowed in `allowed-tools`
   - any GUI steps MUST be executed ONLY via MCP service `playwright-mcp` (no manual browser; no Python/Node/Playwright scripts).
-
+  
   IMPORTANT: Explicitly instruct the subagent that manual file editing is banned. 
   Tell the subagent: "I will reject any work that does not produce a `codex exec` execution log. Do not try to edit files directly."
 
 Subagent instructions (copy verbatim):
 ---
-
 You are the CODEX CLI OPERATOR. Your ONLY job is to run Codex CLI exactly once and report results. You are NOT a software engineer.
 
 MISSION: You must force the `codex` CLI tool to perform the work.
 NON-NEGOTIABLE RULE: You are FORBIDDEN from using `Write`, `Edit`, or `Replace` tools on project files. You have NO permission to edit code manually.
 TOOLS:
-
 - You MAY use the Read tool to inspect files (tasks.md / progress.txt / feature_list.json).
 - You MUST invoke the Bash tool exactly once, and that single invocation MUST be CODEX_CMD.
 - You are FORBIDDEN from using Write/Edit/Replace on project files.
 
 Execution Steps (Do exactly this):
-
 1. Read (Read tool, not Bash):
    - `openspec/changes/$ARGUMENTS/tasks.md`
    - `openspec/changes/$ARGUMENTS/progress.txt`
@@ -254,7 +230,7 @@ Execution Steps (Do exactly this):
      - write any `EVIDENCE (RUN #...)` line
      - write PASS/FAIL/RESULT/validated= conclusions
      - toggle any checkbox
-       Also verify governance constraints:
+   Also verify governance constraints:
    - `feature_list.json` MUST NOT be modified by the Worker (neither entries nor pass-state).
    - No git commit is expected/allowed from the Worker.
    - If the CLI violated any of the above, report failure.
@@ -262,7 +238,6 @@ Execution Steps (Do exactly this):
 <INLINE_PROMPT> Template (fill variables):
 
 (Shared setup)
-
 - change-id: $ARGUMENTS
 - include the exact TASK_LINE text (verbatim)
 - state explicitly: "Implement ONLY this task (no other tasks, no refactors outside scope)."
@@ -274,7 +249,6 @@ Execution Steps (Do exactly this):
     but MUST NOT claim PASS/FAIL/validated (Supervisor is the final verifier).
 
 A) Worker deliverables (validation bundle assets)
-
 - Create a NEW run-folder (append-only; never overwrite prior runs):
   `auto_test_openspec/$ARGUMENTS/run-<RUN4>__task-<TASK_ID>__ref-<REF>__<YYYYMMDDThhmmssZ>/`
 - Minimum required files inside the run-folder:
@@ -298,7 +272,7 @@ A) Worker deliverables (validation bundle assets)
   - If missing deps / conflicts prevent execution, create an isolated venv via `uv` inside THIS run folder
     (e.g., `<run-folder>/.venv/`) and ensure `run.sh`/`run.bat` uses it.
   - Log provenance into `logs/` (always): python path+version, uv version, dependency source, exact install commands.
-    A) Startup ritual (MANDATORY, before any edits)
+A) Startup ritual (MANDATORY, before any edits)
 - REQUIRE CodeX STARTUP RITUAL:
   - read `openspec/changes/$ARGUMENTS/progress.txt`
   - read `openspec/changes/$ARGUMENTS/feature_list.json`
@@ -309,7 +283,6 @@ A) Worker deliverables (validation bundle assets)
   - The snapshot MUST include: UTC timestamp, CODEX_CMD, GIT_BASE, the git-log excerpt, and a short “what I observed” summary.
 
 B) tasks.md bookkeeping (Worker-owned; single-line; NO conclusions)
-
 - require Codex to update `openspec/changes/$ARGUMENTS/tasks.md` under THIS task with exactly ONE Worker bookkeeping line (NOT EVIDENCE):
   - starting with: `BUNDLE (RUN #<RUN_COUNTER>): ...`
   - MUST be a SINGLE LINE
@@ -325,7 +298,6 @@ B) tasks.md bookkeeping (Worker-owned; single-line; NO conclusions)
 - forbid Codex from toggling ANY checkbox in tasks.
 
 C) GUI hard rules (only if SCOPE includes GUI/MIXED)
-
 - GUI verification is Supervisor-only via MCP service `playwright-mcp`.
 - Worker deliverable for GUI is ONLY the MCP runbook file:
   - `tests/gui_runbook_*.md` MUST be MCP-only steps + selectors + assertion points + evidence capture points.
@@ -336,7 +308,6 @@ C) GUI hard rules (only if SCOPE includes GUI/MIXED)
   - MUST NOT perform state seeding/copying/exporting/testing/validation/probing/installs.
 
 D) Governance boundaries (Worker forbidden; Supervisor-only)
-
 - feature_list governance (MANDATORY; strict):
   - The Worker/Codex is FORBIDDEN to edit `openspec/changes/$ARGUMENTS/feature_list.json` (no entry edits, no pass-state edits, no formatting churn).
   - If `openspec/changes/$ARGUMENTS/feature_list.json` is missing OR the matching ref entry is missing:
@@ -355,7 +326,6 @@ D) Governance boundaries (Worker forbidden; Supervisor-only)
 3) After Codex finishes, confirm that `openspec/changes/$ARGUMENTS/tasks.md` has either:
 
 BUNDLE-READY (Worker output, under THIS task):
-
   - EXACTLY ONE `BUNDLE (RUN #<RUN_COUNTER>): ...` line that points to a concrete run-folder:
     - includes `VALIDATION_BUNDLE: auto_test_openspec/$ARGUMENTS/run-.../`
     - includes `HOW_TO_RUN: run.sh/run.bat`
@@ -372,19 +342,16 @@ BUNDLE-READY (Worker output, under THIS task):
   - Worker MUST NOT have edited `git_openspec_history/<change-id>/runs.log`.
 
 OR BLOCKED (Worker output, under THIS task):
-
   - `BLOCKED: ...` (1–5 line error excerpt)
   - `NEEDS: ...` (next concrete unblock step)
 
 OR ROLE_VIOLATION (Worker output, under THIS task):
-
   - Any `EVIDENCE (RUN #...)` / PASS/FAIL/RESULT/validated= conclusion, checkbox toggle, feature_list.json edit, git commit,
     or any edit/append to `git_openspec_history/<change-id>/runs.log`.
 
 Otherwise treat as NO_PROGRESS (missing BUNDLE line and/or missing run-folder).
 
 1.4) Supervisor verification after subagent returns
-
 - Re-read TASKS_FILE.
 - Determine status (under THIS task only):
 
@@ -411,7 +378,6 @@ Otherwise treat as NO_PROGRESS (missing BUNDLE line and/or missing run-folder).
 - DONE is reachable only after Supervisor validation PASS + compliant EVIDENCE exists under THIS task.
 
 If DONE:
-
 - Toggle the checkbox to `- [x]` (Supervisor only).
 - Append a FULL RUN ENTRY to PROGRESS_FILE (Supervisor only; verified facts only) including:
   - RUN SUMMARY (timestamp, run #, change-id, task/ref, status)
@@ -428,7 +394,6 @@ If DONE:
 - RUN_COUNTER += 1 and continue/stop per your session policy.
 
 If BLOCKED:
-
 - Ensure actionable NEEDS exists (next concrete unblock step).
 
 - Call skill `openspec-unblock-research` (Supervisor-only). Do NOT call MCP tools directly here.
@@ -451,7 +416,6 @@ If BLOCKED:
 - Retry once as before; if blocked again, STOP and require user/initializer intervention.
 
 If NO_PROGRESS:
-
 - Treat as a FAILED ATTEMPT (not an immediate session stop by default).
 - Under THIS task, append/refresh a single diagnostic note:
   `BLOCKED: Missing a compliant BUNDLE pointer and/or the referenced validation bundle folder is missing/incomplete for this RUN (workflow non-compliance).`
@@ -465,7 +429,6 @@ If NO_PROGRESS:
   - Else (Attempt #k == MAX_ATTEMPTS): mark the task MAXED and apply dependency-blocking stop logic (stop only if it blocks safe forward progress).
 
 2) Completion (only at start-of-session, or if CURRENT_TASK selection finds none)
-
 - If no unchecked tasks remain:
   `[MONITOR] DONE | change=$ARGUMENTS | all tasks checked`
   then STOP.
